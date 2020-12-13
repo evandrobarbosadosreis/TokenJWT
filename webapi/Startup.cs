@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using webapi.Data;
+using webapi.Services;
+using webapi.Services.Interfaces;
 
 namespace webapi
 {
@@ -22,6 +24,7 @@ namespace webapi
         {
             services.AddControllers();
             services.AddDbContext<DataContext>(o => o.UseInMemoryDatabase("database"));
+
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "webapi", Version = "v1" });
