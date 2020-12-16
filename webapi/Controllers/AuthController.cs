@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -17,9 +18,10 @@ namespace webapi.Controllers
 {
 
     // Não me preocupei em arquitetura. A ideia deste projeto é 
-    // apenas mostrar o funcionamento do serviço de geração de Token.
-    // Recomendo estudar bem o funcionamento da rotina, que já é 
-    // complexa por si só, antes de aplicar esta lógica em alguma 
+    // apenas mostrar da forma MAIS DIDÁTICA POSSÍVEL o funcionamento 
+    // da configuração e geração de Token JWT.
+    // Recomendo estudar bem a implementação da rotina (que já é 
+    // complexa por si só) antes de aplicar esta lógica em alguma 
     // arquitetura mais complexa.
 
     [Route("api/[controller]")]
@@ -37,13 +39,31 @@ namespace webapi.Controllers
             _geradorDeToken = geradorDeToken;
         }
         
-        private static List<Claim> GerarClaimsUsuario(Usuario usuario)
+        private List<Claim> GerarClaims(Usuario usuario)
         {
             return new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sid, usuario.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.UniqueName, usuario.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, usuario.Email),
-                new Claim(JwtRegisteredClaimNames.UniqueName, usuario.Nome),
+            };
+        }
+
+        private async Task AtualizarUsuario(Usuario usuario, string novoRefreshToken, DateTime? novaDataExpiracao)
+        {
+            usuario.RefreshToken  = novoRefreshToken;
+            usuario.DataExpiracao = novaDataExpiracao;
+            await _context.SaveChangesAsync();
+        }
+
+        public TokenDTO GerarTokenDTO(string token, string refresh, DateTime dataCriacao, DateTime dataExpiracao)
+        {
+            return new TokenDTO
+            {
+                Autenticado  = true,
+                AccessToken  = token,
+                RefreshToken = refresh,
+                Criacao      = dataCriacao,
+                Expiracao    = dataExpiracao,
             };
         }
 
@@ -55,7 +75,7 @@ namespace webapi.Controllers
         [Route("buscar")]
         [Authorize]
         public async Task<IActionResult> Get() => Ok(await _context.Usuarios.ToListAsync());
-        
+
         /// <summary>
         /// Realiza a autenticação gerando um token
         /// e um refresh token para o usuário
@@ -78,28 +98,97 @@ namespace webapi.Controllers
             }
 
             // Gera as claims, token de autenticação e refresh token
-            var claims  = GerarClaimsUsuario(usuario);
+            var claims  = GerarClaims(usuario);
             var token   = _geradorDeToken.GerarToken(claims);
             var refresh = _geradorDeToken.GerarRefreshToken();
 
-            // Persiste o refresh token + data de expiração no DB
-            usuario.RefreshToken  = refresh;
-            usuario.DataExpiracao = DateTime.Now.AddDays(_config.DaysToRefresh);
-            await _context.SaveChangesAsync();
+            // Atualiza a tabela de usuários com o novo refresh token + data de expiração
+            await AtualizarUsuario(
+                usuario,
+                refresh,
+                DateTime.Now.AddDays(_config.DaysToRefresh));
 
-            // Popula data de criação e expiração do token e ...
+            // Determina a data de criação e expiração do token e ...
             var dataCriacao   = DateTime.Now;
             var dataExpiracao = dataCriacao.AddMinutes(_config.MinutesToExpire);
 
             // ... retorna o DTO com tudo OK
-            return Ok(new TokenDTO
+            var resultado = GerarTokenDTO(
+                token, 
+                refresh, 
+                dataCriacao, 
+                dataExpiracao);
+
+            return Ok(resultado);
+        }
+
+        /// <summary>
+        /// Realiza a renovação de um token expirado baseado
+        /// no refreshtoken gerado na primeira autentaicação
+        /// </summary>
+        [HttpPost]
+        [Route("renovar")]
+        public async Task<IActionResult> Renovar(RefreshDTO refreshDTO)
+        {
+            // Recupera o token, o refreshtoken e as claimns 
+            var token     = refreshDTO.AccessToken;
+            var refresh   = refreshDTO.RefreshToken;
+            var principal = _geradorDeToken.ObterClaimPrincipal(token);
+        
+            // Recupera o ID do usuário...
+            if (!int.TryParse(principal.Identity.Name, out var idUsuario))
             {
-                Autenticado  = true,
-                AccessToken  = token,
-                RefreshToken = refresh,
-                Criacao      = dataCriacao,
-                Expiracao    = dataExpiracao,
-            });
+                return BadRequest("Token inválido");
+            }
+
+            // ... e busca do banco de dados
+            var usuario = await _context.Usuarios.FindAsync(idUsuario);
+
+            // Determina que tudo está ok com o refresh token informado  
+            if (usuario == null || usuario.RefreshToken != refresh || usuario.DataExpiracao < DateTime.Now)
+            {
+                return BadRequest("É necessário realizar uma nova autenticação");
+            }
+
+            // Gera novos tokens
+            token   = _geradorDeToken.GerarToken(principal.Claims);
+            refresh = _geradorDeToken.GerarRefreshToken();
+
+            // Atualiza a tabela de usuários com o novo refresh token + data de expiração
+            await AtualizarUsuario(
+                usuario, 
+                refresh, 
+                DateTime.Now.AddDays(_config.DaysToRefresh)
+            );
+
+            // Determina data de criação e expiração do token e ...
+            var dataCriacao   = DateTime.Now;
+            var dataExpiracao = dataCriacao.AddMinutes(_config.MinutesToExpire);
+
+            // ... retorna o um novo DTO atualizado com tudo OK
+            var resultado = GerarTokenDTO(
+                token, 
+                refresh, 
+                dataCriacao, 
+                dataExpiracao);
+
+            return Ok(resultado);
+        }
+
+        /// <summary>
+        /// Apenas revoga o refresh token do 
+        /// usuário em um eventual logoff
+        /// </summary>
+        [HttpGet]
+        [Route("revogar")]
+        [Authorize]
+        public async Task<IActionResult> Revogar()
+        {
+            // Recupera o ID do usuário logado...
+            var idUsuario = int.Parse(User.Identity.Name);
+            var usuario   = await _context.Usuarios.FindAsync(idUsuario);
+            await AtualizarUsuario(usuario, null, null);
+            return NoContent();
         }
 
     }
