@@ -68,7 +68,7 @@ namespace webapi.Controllers
         }
 
         /// <summary>
-        /// Apenas um xemplo de método que só poderá 
+        /// Apenas um exemplo de método que só poderá 
         /// ser acessado após a autenticação do usuário
         /// </summary>
         [HttpGet]
@@ -124,13 +124,13 @@ namespace webapi.Controllers
 
         /// <summary>
         /// Realiza a renovação de um token expirado baseado
-        /// no refreshtoken gerado na primeira autentaicação
+        /// no refreshtoken gerado na primeira autenticação
         /// </summary>
         [HttpPost]
         [Route("renovar")]
         public async Task<IActionResult> Renovar(RefreshDTO refreshDTO)
         {
-            // Recupera o token, o refreshtoken e as claimns 
+            // Recupera o token, o refreshtoken e as claims 
             var token     = refreshDTO.AccessToken;
             var refresh   = refreshDTO.RefreshToken;
             var principal = _geradorDeToken.ObterClaimPrincipal(token);
@@ -184,7 +184,6 @@ namespace webapi.Controllers
         [Authorize]
         public async Task<IActionResult> Revogar()
         {
-            // Recupera o ID do usuário logado...
             var idUsuario = int.Parse(User.Identity.Name);
             var usuario   = await _context.Usuarios.FindAsync(idUsuario);
             await AtualizarUsuario(usuario, null, null);
