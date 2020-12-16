@@ -5,18 +5,18 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using webapi.Services.Configurations;
+using webapi.Services.Config;
 using webapi.Services.Interfaces;
 
 namespace webapi.Services
 {
-    public class TokenService : ITokenService
+    public class GeradorDeTokenService : IGeradorDeTokenService
     {
-        private TokenConfiguration _config;
+        private ConfiguracaoDoToken _config;
 
-        public TokenService(TokenConfiguration configuration)
+        public GeradorDeTokenService(ConfiguracaoDoToken config)
         {
-            _config = configuration;
+            _config = config;
         }
 
         public ClaimsPrincipal ObterClaimPrincipal(string tokenExpirado)
@@ -24,7 +24,7 @@ namespace webapi.Services
             var validationParameters = new TokenValidationParameters
             {
                 ValidateAudience = false,
-                ValidateIssuer = false,
+                ValidateIssuer   = false,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config.Secret)),
                 ValidateLifetime = false,
                 ValidateIssuerSigningKey = true
@@ -61,10 +61,10 @@ namespace webapi.Services
             var credentials = new SigningCredentials(secretKey, SecurityAlgorithms.HmacSha256);
 
             var options = new JwtSecurityToken(
-                issuer: _config.Issuer,
-                audience: _config.Audience,
-                claims: claims,
-                expires: DateTime.Now.AddMinutes(_config.MinutesToExpire),
+                issuer   : _config.Issuer,
+                audience : _config.Audience,
+                claims   : claims,
+                expires  : DateTime.Now.AddMinutes(_config.MinutesToExpire),
                 signingCredentials: credentials
             );
 

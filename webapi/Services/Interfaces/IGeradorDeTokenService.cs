@@ -3,7 +3,7 @@ using System.Security.Claims;
 
 namespace webapi.Services.Interfaces
 {    
-    public interface ITokenService
+    public interface IGeradorDeTokenService
     {
         string GerarRefreshToken();
         string GerarToken(IEnumerable<Claim> claims);
